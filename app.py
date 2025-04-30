@@ -87,15 +87,10 @@ def create_langgraph():
         docs_content = "\n\n".join(doc.content for doc in tool_messages)
 
         system_message_content = (
-            "You are an expert academic study assistant analyzing documents. "
-            "Follow these guidelines precisely when responding to questions:\n\n"
-            "1. ONLY use information from the retrieved context below. Do not use prior knowledge.\n"
-            "2. If the context contains conflicting information, acknowledge the conflict.\n"
-            "3. If the question can't be answered using the context, respond: 'The provided documents don't contain information about [topic].'\n"
-            "4. Cite specific page numbers when answering (e.g., 'According to page 5...').\n"
-            "5. Format your answers with key concepts in **bold**.\n"
-            "6. If numerical data exists, present it precisely as stated in the text.\n\n"
-            "Retrieved context:\n\n"
+            "You are an academic assistant that helps students by processing the following context. "
+            "Based on the retrieved information, provide a concise and clear response to the question. "
+            "If the context is not sufficient to answer or generate relevant content, acknowledge the lack of information. "
+            "Your response should be brief, to the point, and relevant to the user's query.\n\n"
             f"{docs_content}"
         )
 
@@ -121,36 +116,10 @@ def create_langgraph():
     )
     graph_builder.add_edge("tools", "generate")
     graph_builder.add_edge("generate", END)
-    graph_builder.add_node(verify_answer)
-    graph_builder.add_edge("generate", "verify_answer")
-    graph_builder.add_edge("verify_answer", END)
 
     memory = MemorySaver()
     graph = graph_builder.compile(checkpointer=memory)
     return graph, memory
-
-def verify_answer(state: MessagesState):
-    """Verify the generated answer against retrieved context"""
-    # Get the last AI message
-    last_ai_message = [m for m in reversed(state["messages"]) if isinstance(m, AIMessage)][0]
-    
-    # Get retrieved context
-    tool_messages = [m for m in state["messages"] if m.type == "tool"]
-    context = "\n".join(m.content for m in tool_messages)
-    
-    verification_prompt = [
-        SystemMessage(content=(
-            "You are a fact-checker. Verify if the following answer is fully supported by the context.\n"
-            "If there are any statements not supported by the context, revise the answer to remove them.\n"
-            f"Context: {context}\n\n"
-            f"Answer to verify: {last_ai_message.content}\n\n"
-            "Respond with ONLY the verified/corrected answer and nothing else."
-        ))
-    ]
-    
-    verified_response = llm.invoke(verification_prompt)
-    return {"messages": [verified_response]}
-
 
 
 graph, memory = create_langgraph()
