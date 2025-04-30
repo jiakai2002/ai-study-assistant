@@ -2,7 +2,8 @@
 
 An interactive AI-powered chatbot built with **Streamlit** and **LangChain** that allows users to upload PDF documents and ask questions based on their content. This tool uses **OpenAI's GPT-4o** and **vector embeddings** for context-aware answers, making studying more efficient and personalized.
 
-<img width="1069" alt="Screenshot 2025-04-30 at 2 46 09 PM" src="https://github.com/user-attachments/assets/1d78b46c-a2b2-4a68-bb18-e4a720034a1c" />
+<img width="1050" alt="Screenshot 2025-04-30 at 4 25 20 PM" src="https://github.com/user-attachments/assets/c1caf2ac-a5e7-45f5-9c26-3dd81e56d3aa" />
+<img width="1102" alt="Screenshot 2025-04-30 at 4 26 06 PM" src="https://github.com/user-attachments/assets/14c72988-a5af-4167-8bc0-78f4f76c7ef8" />
 
 ## 🚀 Features
 
