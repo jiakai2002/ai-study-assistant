@@ -63,8 +63,9 @@ def retrieve(query: str):
     """Retrieve relevant documents from the book given a user query."""
     retrieved_docs = vector_store.similarity_search(query, k=2)
     serialized = "\n\n".join(
-        f"Source: {doc.metadata}\nContent: {doc.page_content}"
-        for doc in retrieved_docs
+        f"SOURCE {i+1} [Page {doc.metadata.get('page', 'unknown')}, "
+        f"Start index: {doc.metadata.get('start_index', 'unknown')}]:\n{doc.page_content}"
+        for i, doc in enumerate(retrieved_docs)
     )
     return serialized, retrieved_docs
 
@@ -86,10 +87,15 @@ def create_langgraph():
         docs_content = "\n\n".join(doc.content for doc in tool_messages)
 
         system_message_content = (
-            "You are an assistant for question-answering tasks. "
-            "Use the following pieces of retrieved context to answer "
-            "the question. If you don't know the answer, say that you don't know. "
-            "Use three sentences maximum and keep the answer concise.\n\n"
+            "You are an expert academic study assistant analyzing documents. "
+            "Follow these guidelines precisely when responding to questions:\n\n"
+            "1. ONLY use information from the retrieved context below. Do not use prior knowledge.\n"
+            "2. If the context contains conflicting information, acknowledge the conflict.\n"
+            "3. If the question can't be answered using the context, respond: 'The provided documents don't contain information about [topic].'\n"
+            "4. Cite specific page numbers when answering (e.g., 'According to page 5...').\n"
+            "5. Format your answers with key concepts in **bold**.\n"
+            "6. If numerical data exists, present it precisely as stated in the text.\n\n"
+            "Retrieved context:\n\n"
             f"{docs_content}"
         )
 
@@ -115,10 +121,37 @@ def create_langgraph():
     )
     graph_builder.add_edge("tools", "generate")
     graph_builder.add_edge("generate", END)
+    graph_builder.add_node(verify_answer)
+    graph_builder.add_edge("generate", "verify_answer")
+    graph_builder.add_edge("verify_answer", END)
 
     memory = MemorySaver()
     graph = graph_builder.compile(checkpointer=memory)
     return graph, memory
+
+def verify_answer(state: MessagesState):
+    """Verify the generated answer against retrieved context"""
+    # Get the last AI message
+    last_ai_message = [m for m in reversed(state["messages"]) if isinstance(m, AIMessage)][0]
+    
+    # Get retrieved context
+    tool_messages = [m for m in state["messages"] if m.type == "tool"]
+    context = "\n".join(m.content for m in tool_messages)
+    
+    verification_prompt = [
+        SystemMessage(content=(
+            "You are a fact-checker. Verify if the following answer is fully supported by the context.\n"
+            "If there are any statements not supported by the context, revise the answer to remove them.\n"
+            f"Context: {context}\n\n"
+            f"Answer to verify: {last_ai_message.content}\n\n"
+            "Respond with ONLY the verified/corrected answer and nothing else."
+        ))
+    ]
+    
+    verified_response = llm.invoke(verification_prompt)
+    return {"messages": [verified_response]}
+
+
 
 graph, memory = create_langgraph()
 
