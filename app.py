@@ -3,6 +3,7 @@ import streamlit as st
 import tempfile
 from dotenv import load_dotenv
 
+from collections import defaultdict
 from langchain.document_loaders import PyPDFLoader
 from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
@@ -58,16 +59,47 @@ if uploaded_files:
                 st.success(f"✅ {uploaded_file.name} - {len(all_splits)} chunks stored.")
 
 # --- Tool: Document Retriever ---
+
 @tool(response_format="content_and_artifact")
 def retrieve(query: str):
-    """Retrieve relevant documents from the book given a user query."""
-    retrieved_docs = vector_store.similarity_search(query, k=2)
+    """
+    Multi-query + RAG-Fusion: Retrieve relevant documents using multiple paraphrases of the query.
+    """
+    # Generate paraphrases
+    paraphrasing_prompt = (
+        f"Generate 3 different paraphrased versions of the following academic question:\n\n{query}"
+    )
+    paraphrase_response = llm.invoke(paraphrasing_prompt)
+    queries = [query] + [q.strip("- ").strip() for q in paraphrase_response.content.strip().split("\n") if q.strip()]
+
+    #Retrieve documents for each query
+    results_per_query = []
+    for q in queries:
+        results = vector_store.similarity_search(q, k=4)
+        results_per_query.append(results)
+
+    # Score using Reciprocal Rank Fusion
+    doc_scores = defaultdict(float)
+    doc_lookup = {}
+
+    for q_results in results_per_query:
+        for rank, doc in enumerate(q_results):
+            doc_id = doc.metadata.get("source", "") + str(doc.metadata.get("start_index", id(doc)))
+            doc_scores[doc_id] += 1 / (rank + 1)  # Reciprocal rank
+            doc_lookup[doc_id] = doc
+
+    # Step 4: Sort by aggregated score and select top results
+    ranked_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)
+    top_docs = [doc_lookup[doc_id] for doc_id, _ in ranked_docs[:3]]
+
+    # Step 5: Format response
     serialized = "\n\n".join(
         f"SOURCE {i+1} [Page {doc.metadata.get('page', 'unknown')}, "
         f"Start index: {doc.metadata.get('start_index', 'unknown')}]:\n{doc.page_content}"
-        for i, doc in enumerate(retrieved_docs)
+        for i, doc in enumerate(top_docs)
     )
-    return serialized, retrieved_docs
+
+    return serialized, top_docs
 
 # --- LangGraph Definition ---
 @st.cache_resource
@@ -123,6 +155,7 @@ def create_langgraph():
 
 
 graph, memory = create_langgraph()
+
 
 # --- Display Chat History ---
 for message in st.session_state.chat_history:
